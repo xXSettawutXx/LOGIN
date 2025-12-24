@@ -26,6 +26,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 # --- 2. การตั้งค่า Email ---
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 465
+app.config['MAIL_ASCII_ATTACHMENTS'] = False
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = 'settawut2548l@gmail.com'
 app.config['MAIL_PASSWORD'] = os.getenv('EMAIL_PASS') # ดึงจาก Environment Variable
@@ -129,5 +130,6 @@ def login():
 
 if __name__ == "__main__":
     app.run()
+
 
 
