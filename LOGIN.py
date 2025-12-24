@@ -16,7 +16,13 @@ if db_url and db_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_here'
-
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "pool_pre_ping": True,     # ตรวจสอบการเชื่อมต่อก่อนใช้เสมอ
+    "pool_recycle": 300,        # รีเฟรชการเชื่อมต่อทุกๆ 5 นาที
+    "connect_args": {
+        "sslmode": "require"    # บังคับ SSL ในระดับโค้ด
+    }
+}
 # --- 2. การตั้งค่า Email ---
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -109,3 +115,4 @@ def login():
 
 if __name__ == "__main__":
     app.run()
+
