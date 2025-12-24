@@ -1,10 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_mail import Mail, Message
 from threading import Thread
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import re
+import resend  # เพิ่มการนำเข้า Resend
 
 app = Flask(__name__)
 
@@ -22,16 +22,10 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "connect_args": {"sslmode": "require"}
 }
 
-# --- 2. Email Configuration (SSL Port 465) ---
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 465
-app.config['MAIL_USE_TLS'] = False
-app.config['MAIL_USE_SSL'] = True
-app.config['MAIL_USERNAME'] = 'settawut2548l@gmail.com'
-app.config['MAIL_PASSWORD'] = os.getenv('EMAIL_PASS') 
+# --- 2. Resend Configuration ---
+resend.api_key = os.getenv("RESEND_API_KEY")
 
 db = SQLAlchemy(app)
-mail = Mail(app)
 
 # --- 3. Database Model ---
 class User(db.Model):
@@ -44,15 +38,20 @@ class User(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- Background Email Function ---
-def send_async_email(app_context, msg):
-    with app_context:
-        try:
-            print("Thread: Sending email...")
-            mail.send(msg)
-            print("Thread: Email sent successfully!")
-        except Exception as e:
-            print(f"Thread Error: {str(e)}")
+# --- ฟังก์ชันส่งอีเมลเบื้องหลัง (Resend Async) ---
+def send_async_email(username, receiver_email, verify_link):
+    try:
+        print(f"Resend: Sending email to {receiver_email}...")
+        params = {
+            "from": "onboarding@resend.dev",  # ช่วงทดสอบต้องใช้ตัวนี้
+            "to": receiver_email,
+            "subject": "ยืนยันการสมัครสมาชิก - Your Game",
+            "html": f"<strong>สวัสดีคุณ {username}</strong><br>คลิกที่นี่เพื่อยืนยันตัวตน: <a href='{verify_link}'>ยืนยันบัญชี</a>",
+        }
+        resend.Emails.send(params)
+        print("Resend: Email sent successfully!")
+    except Exception as e:
+        print(f"Resend Error: {str(e)}")
 
 # --- 4. Register Route ---
 @app.route('/register', methods=['POST'])
@@ -71,22 +70,21 @@ def register():
         return jsonify({"message": "Username or Email already exists"}), 400
     
     try:
+        # 1. บันทึกลง Database
         hashed_pw = generate_password_hash(password, method='pbkdf2:sha256')
         new_user = User(username=username, email=email, password=hashed_pw)
         db.session.add(new_user)
         db.session.commit()
         print(f"DB: User {username} saved.")
         
-        # ส่งเมลเบื้องหลัง
+        # 2. เตรียมข้อมูลและส่งเมลเบื้องหลัง
         verify_link = f"https://{request.host}/verify/{username}"
-        msg = Message("Confirm your Account",
-                      sender=app.config['MAIL_USERNAME'],
-                      recipients=[email])
-        msg.html = f"สวัสดีคุณ {username},<br>คลิกลิงก์เพื่อยืนยันตัวตน: <a href='{verify_link}'>ยืนยันที่นี่</a>"
         
-        Thread(target=send_async_email, args=(app.app_context(), msg)).start()
+        # ใช้ Thread เพื่อไม่ให้แอปค้าง (ป้องกัน Timeout)
+        Thread(target=send_async_email, args=(username, email, verify_link)).start()
         
-        return jsonify({"message": "Success! Check your email."}), 201
+        return jsonify({"message": "Success! Check your email to verify."}), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"message": f"Server Error: {str(e)}"}), 500
@@ -98,17 +96,19 @@ def verify(username):
     if user:
         user.is_verified = True
         db.session.commit()
-        return "<h1>Verify Success!</h1>", 200
-    return "<h1>User not found</h1>", 404
+        return "<h1>ยืนยันตัวตนสำเร็จ! เข้าเล่นเกมได้เลย</h1>", 200
+    return "<h1>ไม่พบข้อมูลผู้ใช้</h1>", 404
 
 # --- 6. Login Route ---
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
+    if not data: return jsonify({"message": "No credentials"}), 400
+    
     user = User.query.filter_by(username=data.get('username')).first()
     if user and check_password_hash(user.password, data.get('password')):
         if not user.is_verified:
-            return jsonify({"message": "Please verify email"}), 401
+            return jsonify({"message": "Please verify your email first"}), 401
         return jsonify({"message": "Success", "username": user.username}), 200
     return jsonify({"message": "Invalid login"}), 401
 
