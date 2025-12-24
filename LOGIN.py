@@ -25,7 +25,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 # --- 2. การตั้งค่า Email ---
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 587
+app.config['MAIL_PORT'] = 465
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = 'settawut2548l@gmail.com'
 app.config['MAIL_PASSWORD'] = os.getenv('EMAIL_PASS') # ดึงจาก Environment Variable
@@ -71,21 +71,35 @@ def register():
     new_user = User(username=username, email=email, password=hashed_pw)
     
     try:
+        # --- 1. บันทึกข้อมูลลง Database ก่อน ---
         db.session.add(new_user)
         db.session.commit()
+        print(f"User {username} saved to database successfully.")
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Database Error: {str(e)}"}), 500
 
-        # --- ส่งอีเมลยืนยัน ---
+    # --- 2. แยกส่วนส่งอีเมล (ถ้าพลาดจะไม่ Rollback ข้อมูลแล้ว) ---
+    try:
         verify_link = f"https://{request.host}/verify/{username}"
         msg = Message("Confirm your Account",
                       sender=app.config['MAIL_USERNAME'],
                       recipients=[email])
         msg.html = f"สวัสดีคุณ {username},<br>กรุณาคลิกลิงก์เพื่อยืนยันตัวตน: <a href='{verify_link}'>ยืนยันที่นี่</a>"
+        
+        print("Attempting to send email...")
         mail.send(msg)
+        print("Email sent!")
 
         return jsonify({"message": "Success! Check your email to verify."}), 201
+
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"message": f"Error: {str(e)}"}), 500
+        # ถ้าส่งเมลไม่สำเร็จ แต่บันทึกข้อมูลไปแล้ว
+        print(f"Email Error: {str(e)}")
+        return jsonify({
+            "message": "Account created, but email failed to send.",
+            "error": str(e)
+        }), 201 # ส่ง 201 กลับไปเพราะถือว่าสร้าง User สำเร็จแล้ว
 
 # --- 5. ระบบ Verify (คลิกจากอีเมล) ---
 @app.route('/verify/<username>')
@@ -115,4 +129,5 @@ def login():
 
 if __name__ == "__main__":
     app.run()
+
 
