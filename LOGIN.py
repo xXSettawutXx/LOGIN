@@ -103,12 +103,16 @@ def on_join(data):
 
 @socketio.on('place_tile')
 def handle_place_tile(data):
+    # พิมพ์ทุกอย่างที่ได้รับมา
+    print(f"--- SERVER RECEIVED: {data} ---")
+    
     room = data.get('room', 'global_room')
-    print(f"Socket: Tile at {data.get('q')}, {data.get('r')}")
+    # พ่นกลับไปหาทุกคนในห้อง
     emit('tile_placed_sync', data, room=room, include_self=False)
-
+    print(f"--- SERVER BROADCASTED to room: {room} ---")
 # --- 6. Run ---
 if __name__ == "__main__":
     # ใช้พอร์ตที่ Render กำหนด หรือ 10000 เป็นค่าเริ่มต้น
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host='0.0.0.0', port=port)
+
