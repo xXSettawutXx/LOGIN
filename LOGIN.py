@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO, emit, join_room
 from threading import Thread
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -7,7 +8,7 @@ import re
 import resend  # เพิ่มการนำเข้า Resend
 
 app = Flask(__name__)
-
+socketio = SocketIO(app, cors_allowed_origins="*")
 # --- 1. Database Connection ---
 db_url = os.getenv('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
@@ -114,3 +115,31 @@ def login():
 
 if __name__ == "__main__":
     app.run()
+# --- 7. SocketIO --- 
+@socketio.on('join_game')
+def on_join(data):
+    username = data.get('username')
+    room = data.get('room', 'default_room') # ในอนาคตใช้รหัสห้องได้
+    join_room(room)
+    print(f"User {username} joined room: {room}")
+    emit('player_joined', {'username': username}, room=room)
+
+@socketio.on('place_tile')
+def handle_place_tile(data):
+    # data จะประกอบด้วย q, r, tile_id, และ rotation
+    room = data.get('room', 'default_room')
+    print(f"Tile placed at {data.get('q')}, {data.get('r')}")
+    
+    # ส่งข้อมูลการวางไพ่ไปให้ทุกคนในห้อง "ยกเว้น" คนที่ส่งมา
+    emit('tile_placed_sync', data, room=room, include_self=False)
+
+@socketio.on('next_turn')
+def handle_next_turn(data):
+    room = data.get('room', 'default_room')
+    # บอกทุกคนว่าถึงตาของใคร (ระบบ Turn-based)
+    emit('turn_changed', {'current_player': data.get('next_user')}, room=room)
+
+if __name__ == "__main__":
+    # เปลี่ยนจาก app.run() เป็น socketio.run(app)
+    socketio.run(app, debug=True)
+
