@@ -5,3 +5,5 @@ gunicorn==21.2.0
 Werkzeug==3.0.1
 resend==0.8.0
 blinker==1.7.0
+flask-socketio==5.3.6
+eventlet==0.33.3
