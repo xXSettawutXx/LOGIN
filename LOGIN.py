@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room
@@ -142,4 +145,5 @@ def handle_next_turn(data):
 if __name__ == "__main__":
     # เปลี่ยนจาก app.run() เป็น socketio.run(app)
     socketio.run(app, debug=True)
+
 
