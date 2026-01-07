@@ -103,17 +103,25 @@ def on_join(data):
 
 @socketio.on('place_tile')
 def handle_place_tile(data):
-    # พิมพ์ทุกอย่างที่ได้รับมา
-    print(f"--- SERVER RECEIVED: {data} ---")
+    # ตรวจสอบว่า data เป็น List หรือไม่ (Godot ชอบส่งมาแบบนี้)
+    if isinstance(data, list):
+        data = data[0]
+        
+    print(f"--- SERVER RECEIVED RAW: {data} ---")
     
     room = data.get('room', 'global_room')
-    # พ่นกลับไปหาทุกคนในห้อง
+    
+    # บังคับพิมพ์สถานะห้องว่าเจอไหม
+    print(f"Target Room: {room}")
+    
+    # กระจายข้อมูล
     emit('tile_placed_sync', data, room=room, include_self=False)
-    print(f"--- SERVER BROADCASTED to room: {room} ---")
+    print(f"--- SERVER BROADCASTED SUCCESS ---")
 # --- 6. Run ---
 if __name__ == "__main__":
     # ใช้พอร์ตที่ Render กำหนด หรือ 10000 เป็นค่าเริ่มต้น
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host='0.0.0.0', port=port)
+
 
 
