@@ -4,14 +4,14 @@ eventlet.monkey_patch()
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room
-from threading import Thread
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-import re
-import resend  # เพิ่มการนำเข้า Resend
+import resend
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# เพิ่ม async_mode='eventlet' เพื่อให้รองรับ WebSocket บน Render
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
 # --- 1. Database Connection ---
 db_url = os.getenv('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
@@ -22,16 +22,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_here'
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
-    "pool_recycle": 300,
+    "pool_recycle": 280,
     "connect_args": {"sslmode": "require"}
 }
 
-# --- 2. Resend Configuration ---
 resend.api_key = os.getenv("RESEND_API_KEY")
-
 db = SQLAlchemy(app)
 
-# --- 3. Database Model ---
+# --- 2. Database Model ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -42,108 +40,75 @@ class User(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- ฟังก์ชันส่งอีเมลเบื้องหลัง (Resend Async) ---
+# --- 3. Async Email Function ---
 def send_async_email(username, receiver_email, verify_link):
     try:
-        print(f"Resend: Sending email to {receiver_email}...")
         params = {
-            "from": "onboarding@resend.dev",  # ช่วงทดสอบต้องใช้ตัวนี้
+            "from": "onboarding@resend.dev",
             "to": receiver_email,
-            "subject": "ยืนยันการสมัครสมาชิก - Your Game",
-            "html": f"<strong>สวัสดีคุณ {username}</strong><br>คลิกที่นี่เพื่อยืนยันตัวตน: <a href='{verify_link}'>ยืนยันบัญชี</a>",
+            "subject": "ยืนยันการสมัครสมาชิก",
+            "html": f"<strong>สวัสดีคุณ {username}</strong><br>คลิกยืนยัน: <a href='{verify_link}'>ยืนยันบัญชี</a>",
         }
         resend.Emails.send(params)
-        print("Resend: Email sent successfully!")
+        print(f"Resend: Sent to {receiver_email}")
     except Exception as e:
         print(f"Resend Error: {str(e)}")
 
-# --- 4. Register Route ---
+# --- 4. Routes ---
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
     if not data: return jsonify({"message": "No data"}), 400
-
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    email = data.get('email', '').strip()
-
-    if not all([username, password, email]):
-        return jsonify({"message": "All fields required"}), 400
+    username, password, email = data.get('username','').strip(), data.get('password','').strip(), data.get('email','').strip()
     
     if User.query.filter((User.username == username) | (User.email == email)).first():
-        return jsonify({"message": "Username or Email already exists"}), 400
+        return jsonify({"message": "Exists"}), 400
     
-    try:
-        # 1. บันทึกลง Database
-        hashed_pw = generate_password_hash(password, method='pbkdf2:sha256')
-        new_user = User(username=username, email=email, password=hashed_pw)
-        db.session.add(new_user)
-        db.session.commit()
-        print(f"DB: User {username} saved.")
-        
-        # 2. เตรียมข้อมูลและส่งเมลเบื้องหลัง
-        verify_link = f"https://{request.host}/verify/{username}"
-        
-        # ใช้ Thread เพื่อไม่ให้แอปค้าง (ป้องกัน Timeout)
-        Thread(target=send_async_email, args=(username, email, verify_link)).start()
-        
-        return jsonify({"message": "Success! Check your email to verify."}), 201
+    hashed_pw = generate_password_hash(password, method='pbkdf2:sha256')
+    new_user = User(username=username, email=email, password=hashed_pw)
+    db.session.add(new_user)
+    db.session.commit()
+    
+    verify_link = f"https://{request.host}/verify/{username}"
+    # ใช้ SocketIO background task แทน Thread ปกติเพื่อความเข้ากันได้กับ eventlet
+    socketio.start_background_task(send_async_email, username, email, verify_link)
+    return jsonify({"message": "Success"}), 201
 
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"message": f"Server Error: {str(e)}"}), 500
-
-# --- 5. Verify Route ---
 @app.route('/verify/<username>')
 def verify(username):
     user = User.query.filter_by(username=username).first()
     if user:
         user.is_verified = True
         db.session.commit()
-        return "<h1>ยืนยันตัวตนสำเร็จ! เข้าเล่นเกมได้เลย</h1>", 200
-    return "<h1>ไม่พบข้อมูลผู้ใช้</h1>", 404
+        return "<h1>Verified!</h1>", 200
+    return "<h1>Not Found</h1>", 404
 
-# --- 6. Login Route ---
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    if not data: return jsonify({"message": "No credentials"}), 400
-    
     user = User.query.filter_by(username=data.get('username')).first()
     if user and check_password_hash(user.password, data.get('password')):
-        if not user.is_verified:
-            return jsonify({"message": "Please verify your email first"}), 401
+        if not user.is_verified: return jsonify({"message": "Verify first"}), 401
         return jsonify({"message": "Success", "username": user.username}), 200
-    return jsonify({"message": "Invalid login"}), 401
+    return jsonify({"message": "Invalid"}), 401
 
-if __name__ == "__main__":
-    app.run()
-# --- 7. SocketIO --- 
+# --- 5. SocketIO Events (ต้องอยู่ก่อนคำสั่งรัน) ---
 @socketio.on('join_game')
 def on_join(data):
     username = data.get('username')
-    room = data.get('room', 'default_room') # ในอนาคตใช้รหัสห้องได้
+    room = data.get('room', 'global_room')
     join_room(room)
-    print(f"User {username} joined room: {room}")
+    print(f"Socket: {username} joined {room}")
     emit('player_joined', {'username': username}, room=room)
 
 @socketio.on('place_tile')
 def handle_place_tile(data):
-    # data จะประกอบด้วย q, r, tile_id, และ rotation
-    room = data.get('room', 'default_room')
-    print(f"Tile placed at {data.get('q')}, {data.get('r')}")
-    
-    # ส่งข้อมูลการวางไพ่ไปให้ทุกคนในห้อง "ยกเว้น" คนที่ส่งมา
+    room = data.get('room', 'global_room')
+    print(f"Socket: Tile at {data.get('q')}, {data.get('r')}")
     emit('tile_placed_sync', data, room=room, include_self=False)
 
-@socketio.on('next_turn')
-def handle_next_turn(data):
-    room = data.get('room', 'default_room')
-    # บอกทุกคนว่าถึงตาของใคร (ระบบ Turn-based)
-    emit('turn_changed', {'current_player': data.get('next_user')}, room=room)
-
+# --- 6. Run ---
 if __name__ == "__main__":
-    # เปลี่ยนจาก app.run() เป็น socketio.run(app)
-    socketio.run(app, debug=True)
-
-
+    # ใช้พอร์ตที่ Render กำหนด หรือ 10000 เป็นค่าเริ่มต้น
+    port = int(os.environ.get("PORT", 10000))
+    socketio.run(app, host='0.0.0.0', port=port)
