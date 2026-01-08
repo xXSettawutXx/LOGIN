@@ -7,7 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room
 from werkzeug.security import generate_password_hash, check_password_hash
 import resend
-rooms_players = {}
+
 app = Flask(__name__)
 # เพิ่ม async_mode='eventlet' เพื่อให้รองรับ WebSocket บน Render
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
@@ -98,40 +98,9 @@ def on_join(data):
     username = data.get('username')
     room = data.get('room', 'global_room')
     join_room(room)
-    
-    if room not in rooms_players:
-        rooms_players[room] = []
-    
-    if username not in rooms_players[room]:
-        rooms_players[room].append(username)
-        
-    # ใครเข้าคนแรก คนนั้นคือคนเริ่ม (Index 0)
-    starting_player = rooms_players[room][0]
-    
-    print(f"Room {room}: {rooms_players[room]}")
-    # ส่งบอกทุกคนว่าใครคือคนที่มีสิทธิ์เล่นคนแรก
-    emit('turn_switched', {'next_player': starting_player}, room=room)
-    
-@socketio.on('next_turn')
-def handle_next_turn(data):
-    room = data.get('room', 'global_room')
-    current_user = data.get('username')
-    
-    players = rooms_players.get(room, [])
-    if len(players) < 2:
-        emit('turn_switched', {'next_player': current_user}, room=room)
-        return
+    print(f"Socket: {username} joined {room}")
+    emit('player_joined', {'username': username}, room=room)
 
-    # คำนวณหาคนถัดไปในรายชื่อ [0] -> [1] -> [0]
-    try:
-        current_idx = players.index(current_user)
-        next_idx = (current_idx + 1) % len(players)
-        next_player = players[next_idx]
-        
-        emit('turn_switched', {'next_player': next_player}, room=room)
-    except:
-        pass
-        
 @socketio.on('place_tile')
 def handle_place_tile(data):
     # ตรวจสอบว่า data เป็น List หรือไม่ (Godot ชอบส่งมาแบบนี้)
@@ -161,7 +130,5 @@ def default_error_handler(e):
 @socketio.on('message')
 def handle_message(msg):
     print(f"DEBUG MESSAGE: {msg}")
-
-
 
 
