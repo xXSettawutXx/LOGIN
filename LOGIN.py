@@ -122,6 +122,14 @@ if __name__ == "__main__":
     # ใช้พอร์ตที่ Render กำหนด หรือ 10000 เป็นค่าเริ่มต้น
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host='0.0.0.0', port=port)
+# เพิ่มต่อจากฟังก์ชัน handle_place_tile
+@socketio.on_error_default
+def default_error_handler(e):
+    print(f"DEBUG ERROR: {e}")
+
+@socketio.on('message')
+def handle_message(msg):
+    print(f"DEBUG MESSAGE: {msg}")
 
 
 
