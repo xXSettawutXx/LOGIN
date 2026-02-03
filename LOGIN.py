@@ -85,12 +85,16 @@ def verify(username):
 
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
-    user = User.query.filter_by(username=data.get('username')).first()
-    if user and check_password_hash(user.password, data.get('password')):
-        if not user.is_verified: return jsonify({"message": "Verify first"}), 401
-        return jsonify({"message": "Success", "username": user.username}), 200
-    return jsonify({"message": "Invalid"}), 401
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    
+    user = User.query.filter_by(username=username).first()
+    
+    if user and check_password_hash(user.password, password):
+        return jsonify({"message": "Login successful", "username": user.username}), 200
+    else:
+        return jsonify({"message": "Invalid username or password"}), 401
 
 # --- 5. SocketIO Events (ต้องอยู่ก่อนคำสั่งรัน) ---
 @socketio.on('join_game')
@@ -161,6 +165,7 @@ def default_error_handler(e):
 @socketio.on('message')
 def handle_message(msg):
     print(f"DEBUG MESSAGE: {msg}")
+
 
 
 
