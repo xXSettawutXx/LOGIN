@@ -7,6 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room
 from werkzeug.security import generate_password_hash, check_password_hash
 import resend
+
 rooms_players = {}
 app = Flask(__name__)
 # เพิ่ม async_mode='eventlet' เพื่อให้รองรับ WebSocket บน Render
@@ -96,7 +97,7 @@ def login():
     else:
         return jsonify({"message": "Invalid username or password"}), 401
 
-# --- 5. SocketIO Events (ต้องอยู่ก่อนคำสั่งรัน) ---
+# --- 5. SocketIO Events ---
 @socketio.on('join_game')
 def on_join(data):
     username = data.get('username')
@@ -152,12 +153,25 @@ def handle_place_tile(data):
     # กระจายข้อมูล
     emit('tile_placed_sync', data, room=room, include_self=False)
     print(f"--- SERVER BROADCASTED SUCCESS ---")
-# --- 6. Run ---
-if __name__ == "__main__":
-    # ใช้พอร์ตที่ Render กำหนด หรือ 10000 เป็นค่าเริ่มต้น
-    port = int(os.environ.get("PORT", 10000))
-    socketio.run(app, host='0.0.0.0', port=port)
-# เพิ่มต่อจากฟังก์ชัน handle_place_tile
+
+# ==========================================
+# ⚡️ [เพิ่มใหม่] รับแจ้งเตือนเกมจบและกระจายให้เพื่อนในห้อง
+# ==========================================
+@socketio.on('game_over')
+def handle_game_over(data):
+    if isinstance(data, list):
+        data = data[0]
+        
+    room = data.get('room', 'global_room')
+    winner = data.get('winner', 'Unknown')
+    print(f"--- [SERVER] 🏆 Game Over in room {room}! Winner: {winner} ---")
+    
+    # ส่งบอกเพื่อนในห้องว่ามีคนชนะแล้วนะ (include_self=False เพื่อไม่ให้เด้งกลับไปหาคนส่งซ้ำ)
+    emit('game_over', data, room=room, include_self=False)
+
+# ==========================================
+# ⚡️ [ย้ายตำแหน่ง] โค้ดดัก Error เอาขึ้นมาไว้เหนือคำสั่ง Run
+# ==========================================
 @socketio.on_error_default
 def default_error_handler(e):
     print(f"DEBUG ERROR: {e}")
@@ -166,6 +180,8 @@ def default_error_handler(e):
 def handle_message(msg):
     print(f"DEBUG MESSAGE: {msg}")
 
-
-
-
+# --- 6. Run ---
+if __name__ == "__main__":
+    # ใช้พอร์ตที่ Render กำหนด หรือ 10000 เป็นค่าเริ่มต้น
+    port = int(os.environ.get("PORT", 10000))
+    socketio.run(app, host='0.0.0.0', port=port)
