@@ -168,6 +168,22 @@ def handle_game_over(data):
     
     # ส่งบอกเพื่อนในห้องว่ามีคนชนะแล้วนะ (include_self=False เพื่อไม่ให้เด้งกลับไปหาคนส่งซ้ำ)
     emit('game_over', data, room=room, include_self=False)
+@socketio.on('deck_count_sync')
+def handle_deck_count_sync(data):
+    if isinstance(data, list):
+        data = data[0]
+    room = data.get('room', 'global_room')
+    emit('deck_count_sync', data, room=room, include_self=False)
+
+@socketio.on('credit_sync')
+def handle_credit_sync(data):
+    if isinstance(data, list):
+        data = data[0]
+    room = data.get('room', 'global_room')
+    username = data.get('username', '')
+    count = data.get('count', 0)
+    print(f"--- [SERVER] ⚡️ credit_sync from {username}: {count} ---")
+    emit('credit_sync', data, room=room, include_self=False)
 
 # ==========================================
 # ⚡️ [ย้ายตำแหน่ง] โค้ดดัก Error เอาขึ้นมาไว้เหนือคำสั่ง Run
