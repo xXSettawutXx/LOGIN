@@ -109,6 +109,8 @@ def login():
 
 
 # --- 5. SocketIO Events ---
+import random
+
 @socketio.on('join_game')
 def on_join(data):
     username = data.get('username')
@@ -117,6 +119,10 @@ def on_join(data):
 
     if room not in rooms_players:
         rooms_players[room] = []
+        
+    if room not in rooms_seeds:
+        rooms_seeds[room] = random.randint(100000000, 999999999)
+        print(f"--- [SERVER] 🎉 Generated a new Game Seed for room {room}: {rooms_seeds[room]} ---")
 
     if username not in rooms_players[room]:
         rooms_players[room].append(username)
@@ -126,10 +132,8 @@ def on_join(data):
 
     print(f"Room {room}: {rooms_players[room]}")
     
-    # ⚡️ [BUG FIX] ถ้ามี Seed ของห้องนี้ถูกเซฟไว้แล้ว ให้ส่งให้คนที่เพิ่ง join ทันที!
-    if room in rooms_seeds:
-        emit('sync_seed', {'room': room, 'seed': rooms_seeds[room]}, room=request.sid)
-        print(f"--- [SERVER] ♻️ Sent existing Game Seed {rooms_seeds[room]} to late-joiner: {username} ---")
+    # ส่ง Seed ของห้องนี้ให้คนที่เพิ่ง join ทันที!
+    emit('sync_seed', {'room': room, 'seed': rooms_seeds[room]}, room=request.sid)
 
     # ส่งบอกทุกคนว่าใครคือคนที่มีสิทธิ์เล่นคนแรก
     emit('turn_switched', {'next_player': starting_player}, room=room)
