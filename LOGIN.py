@@ -132,8 +132,8 @@ def on_join(data):
 
     print(f"Room {room}: {rooms_players[room]}")
     
-    # ส่ง Seed ของห้องนี้ให้คนที่เพิ่ง join ทันที!
-    emit('sync_seed', {'room': room, 'seed': rooms_seeds[room], 'username': 'SERVER'})
+    # ส่ง Seed ของห้องนี้ให้ทุกคนเลย
+    emit('sync_seed', {'room': room, 'seed': rooms_seeds[room], 'username': 'SERVER'}, room=room)
 
     # ส่งบอกทุกคนว่าใครคือคนที่มีสิทธิ์เล่นคนแรก
     emit('turn_switched', {'next_player': starting_player}, room=room)
