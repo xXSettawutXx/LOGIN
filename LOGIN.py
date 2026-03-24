@@ -189,6 +189,14 @@ def handle_game_over(data):
     # ส่งบอกเพื่อนในห้องว่ามีคนชนะแล้วนะ (include_self=False เพื่อไม่ให้เด้งกลับไปหาคนส่งซ้ำ)
     emit('game_over', data, room=room, include_self=False)
 
+@socketio.on('network_built')
+def handle_network_built(data):
+    if isinstance(data, list):
+        data = data[0]
+    room = data.get('room', 'global_room')
+    print(f"--- [SERVER] 🏗️ network_built in room {room} ---")
+    emit('network_built_sync', data, room=room, include_self=False)
+
 
 @socketio.on('deck_count_sync')
 def handle_deck_count_sync(data):
