@@ -1,4 +1,5 @@
 import eventlet
+
 eventlet.monkey_patch()
 
 import os
@@ -30,6 +31,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 resend.api_key = os.getenv("RESEND_API_KEY")
 db = SQLAlchemy(app)
 
+
 # --- 2. Database Model ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -38,8 +40,10 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     is_verified = db.Column(db.Boolean, default=False)
 
+
 with app.app_context():
     db.create_all()
+
 
 # --- 3. Async Email Function ---
 def send_async_email(username, receiver_email, verify_link):
@@ -55,25 +59,28 @@ def send_async_email(username, receiver_email, verify_link):
     except Exception as e:
         print(f"Resend Error: {str(e)}")
 
+
 # --- 4. Routes ---
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
     if not data: return jsonify({"message": "No data"}), 400
-    username, password, email = data.get('username','').strip(), data.get('password','').strip(), data.get('email','').strip()
-    
+    username, password, email = data.get('username', '').strip(), data.get('password', '').strip(), data.get('email',
+                                                                                                             '').strip()
+
     if User.query.filter((User.username == username) | (User.email == email)).first():
         return jsonify({"message": "Exists"}), 400
-    
+
     hashed_pw = generate_password_hash(password, method='pbkdf2:sha256')
     new_user = User(username=username, email=email, password=hashed_pw)
     db.session.add(new_user)
     db.session.commit()
-    
+
     verify_link = f"https://{request.host}/verify/{username}"
     # ใช้ SocketIO background task แทน Thread ปกติเพื่อความเข้ากันได้กับ eventlet
     socketio.start_background_task(send_async_email, username, email, verify_link)
     return jsonify({"message": "Success"}), 201
+
 
 @app.route('/verify/<username>')
 def verify(username):
@@ -84,18 +91,20 @@ def verify(username):
         return "<h1>Verified!</h1>", 200
     return "<h1>Not Found</h1>", 404
 
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
-    
+
     user = User.query.filter_by(username=username).first()
-    
+
     if user and check_password_hash(user.password, password):
         return jsonify({"message": "Login successful", "username": user.username}), 200
     else:
         return jsonify({"message": "Invalid username or password"}), 401
+
 
 # --- 5. SocketIO Events ---
 @socketio.on('join_game')
@@ -103,25 +112,26 @@ def on_join(data):
     username = data.get('username')
     room = data.get('room', 'global_room')
     join_room(room)
-    
+
     if room not in rooms_players:
         rooms_players[room] = []
-    
+
     if username not in rooms_players[room]:
         rooms_players[room].append(username)
-        
+
     # ใครเข้าคนแรก คนนั้นคือคนเริ่ม (Index 0)
     starting_player = rooms_players[room][0]
-    
+
     print(f"Room {room}: {rooms_players[room]}")
     # ส่งบอกทุกคนว่าใครคือคนที่มีสิทธิ์เล่นคนแรก
     emit('turn_switched', {'next_player': starting_player}, room=room)
-    
+
+
 @socketio.on('next_turn')
 def handle_next_turn(data):
     room = data.get('room', 'global_room')
     current_user = data.get('username')
-    
+
     players = rooms_players.get(room, [])
     if len(players) < 2:
         emit('turn_switched', {'next_player': current_user}, room=room)
@@ -132,27 +142,29 @@ def handle_next_turn(data):
         current_idx = players.index(current_user)
         next_idx = (current_idx + 1) % len(players)
         next_player = players[next_idx]
-        
+
         emit('turn_switched', {'next_player': next_player}, room=room)
     except:
         pass
-        
+
+
 @socketio.on('place_tile')
 def handle_place_tile(data):
     # ตรวจสอบว่า data เป็น List หรือไม่ (Godot ชอบส่งมาแบบนี้)
     if isinstance(data, list):
         data = data[0]
-        
+
     print(f"--- SERVER RECEIVED RAW: {data} ---")
-    
+
     room = data.get('room', 'global_room')
-    
+
     # บังคับพิมพ์สถานะห้องว่าเจอไหม
     print(f"Target Room: {room}")
-    
+
     # กระจายข้อมูล
     emit('tile_placed_sync', data, room=room, include_self=False)
     print(f"--- SERVER BROADCASTED SUCCESS ---")
+
 
 # ==========================================
 # ⚡️ [เพิ่มใหม่] รับแจ้งเตือนเกมจบและกระจายให้เพื่อนในห้อง
@@ -161,19 +173,22 @@ def handle_place_tile(data):
 def handle_game_over(data):
     if isinstance(data, list):
         data = data[0]
-        
+
     room = data.get('room', 'global_room')
     winner = data.get('winner', 'Unknown')
     print(f"--- [SERVER] 🏆 Game Over in room {room}! Winner: {winner} ---")
-    
+
     # ส่งบอกเพื่อนในห้องว่ามีคนชนะแล้วนะ (include_self=False เพื่อไม่ให้เด้งกลับไปหาคนส่งซ้ำ)
     emit('game_over', data, room=room, include_self=False)
+
+
 @socketio.on('deck_count_sync')
 def handle_deck_count_sync(data):
     if isinstance(data, list):
         data = data[0]
     room = data.get('room', 'global_room')
     emit('deck_count_sync', data, room=room, include_self=False)
+
 
 @socketio.on('credit_sync')
 def handle_credit_sync(data):
@@ -185,6 +200,16 @@ def handle_credit_sync(data):
     print(f"--- [SERVER] ⚡️ credit_sync from {username}: {count} ---")
     emit('credit_sync', data, room=room, include_self=False)
 
+@socketio.on('sync_seed')
+def handle_sync_seed(data):
+    if isinstance(data, list):
+        data = data[0]
+    room = data.get('room', 'global_room')
+    seed = data.get('seed', 0)
+    print(f"--- [SERVER] 🌱 sync_seed in room {room}: {seed} ---")
+    emit('sync_seed', data, room=room, include_self=False)
+
+
 # ==========================================
 # ⚡️ [ย้ายตำแหน่ง] โค้ดดัก Error เอาขึ้นมาไว้เหนือคำสั่ง Run
 # ==========================================
@@ -192,9 +217,11 @@ def handle_credit_sync(data):
 def default_error_handler(e):
     print(f"DEBUG ERROR: {e}")
 
+
 @socketio.on('message')
 def handle_message(msg):
     print(f"DEBUG MESSAGE: {msg}")
+
 
 # --- 6. Run ---
 if __name__ == "__main__":
