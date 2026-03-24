@@ -8,8 +8,10 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit, join_room
 from werkzeug.security import generate_password_hash, check_password_hash
 import resend
+from flask import request # Explicit request import needed for sid
 
 rooms_players = {}
+rooms_seeds = {} # ⚡️ [BUG FIX] Store seed for each room to send to late joiners
 app = Flask(__name__)
 # เพิ่ม async_mode='eventlet' เพื่อให้รองรับ WebSocket บน Render
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
@@ -123,6 +125,12 @@ def on_join(data):
     starting_player = rooms_players[room][0]
 
     print(f"Room {room}: {rooms_players[room]}")
+    
+    # ⚡️ [BUG FIX] ถ้ามี Seed ของห้องนี้ถูกเซฟไว้แล้ว ให้ส่งให้คนที่เพิ่ง join ทันที!
+    if room in rooms_seeds:
+        emit('sync_seed', {'room': room, 'seed': rooms_seeds[room]}, room=request.sid)
+        print(f"--- [SERVER] ♻️ Sent existing Game Seed {rooms_seeds[room]} to late-joiner: {username} ---")
+
     # ส่งบอกทุกคนว่าใครคือคนที่มีสิทธิ์เล่นคนแรก
     emit('turn_switched', {'next_player': starting_player}, room=room)
 
@@ -206,6 +214,10 @@ def handle_sync_seed(data):
         data = data[0]
     room = data.get('room', 'global_room')
     seed = data.get('seed', 0)
+    
+    # ⚡️ [BUG FIX] บันทึก Seed ของห้องนี้เก็บเอาไว้ให้คนที่เข้าทีหลัง
+    rooms_seeds[room] = seed
+    
     print(f"--- [SERVER] 🌱 sync_seed in room {room}: {seed} ---")
     emit('sync_seed', data, room=room, include_self=False)
 
